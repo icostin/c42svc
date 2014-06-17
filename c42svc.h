@@ -11,14 +11,16 @@
 #define C42SVC_API C42_LIB_IMPORT
 #endif
 
-#define C42SVC_OK 0
-#define C42SVC_INIT_FAILED 1
-#define C42SVC_MISSING 2
+#define C42SVC_OK 0 /**< ok */
+#define C42SVC_INIT_FAILED 1 /**< init failed */
+#define C42SVC_MISSING 2 /**< requested item is missing */
+#define C42SVC_UNSUP 3 /**< unsupported feature */
 
 /* c42svc_ma ****************************************************************/
 /**
  *  Inits a memory allocator.
- *  @param name [in]    the allocator name 
+ *  @param ma   [out]   allocator struct
+ *  @param name [in]    the allocator name
  */
 C42SVC_API uint_fast8_t C42_CALL c42svc_ma (c42_ma_t * ma, char const * name);
 
