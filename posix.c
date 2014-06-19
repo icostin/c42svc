@@ -10,22 +10,19 @@
 #include <unistd.h>
 #include "c42svc.h"
 
-/* file_t *******************************************************************/
-typedef struct file_s file_t;
-struct file_s
-{
-    c42_io8_t io8;
-    int fd;
-};
-
 /* file_read ****************************************************************/
-uint_fast8_t file_read
-    (c42_io8_t * io, uint8_t * data, size_t size, size_t * rsize)
+static uint_fast8_t file_read
+(
+    uintptr_t context,
+    uint8_t * data,
+    size_t size,
+    size_t * rsize
+)
 {
-    file_t * f = (file_t *) io;
+    int fd = context;
     ssize_t s;
 
-    s = read(f->fd, data, size);
+    s = read(fd, data, size);
     if (s < 0)
     {
         switch (errno)
@@ -49,13 +46,18 @@ uint_fast8_t file_read
 }
 
 /* file_write ***************************************************************/
-uint_fast8_t file_write
-    (c42_io8_t * io, uint8_t const * data, size_t size, size_t * wsize)
+static uint_fast8_t file_write
+(
+    uintptr_t context,
+    uint8_t const * data,
+    size_t size,
+    size_t * wsize
+)
 {
-    file_t * f = (file_t *) io;
+    int fd = context;
     ssize_t s;
 
-    s = write(f->fd, data, size);
+    s = write(fd, data, size);
     if (s < 0)
     {
         switch (errno)
@@ -81,17 +83,17 @@ uint_fast8_t file_write
 }
 
 /* file_seek ****************************************************************/
-uint_fast8_t C42_CALL file_seek
+static uint_fast8_t C42_CALL file_seek
 (
-    c42_io8_t * io,
+    uintptr_t context,
     ptrdiff_t offset,
     int anchor,
     size_t * pos
 )
 {
-    file_t * f = (file_t *) io;
+    int fd = context;
     off_t off;
-    off = lseek(f->fd, (off_t) offset, anchor);
+    off = lseek(fd, (off_t) offset, anchor);
     if (off == (off_t) -1)
     {
         switch (errno)
@@ -108,17 +110,17 @@ uint_fast8_t C42_CALL file_seek
 }
 
 /* file_seek64 **************************************************************/
-uint_fast8_t C42_CALL file_seek64
+static uint_fast8_t C42_CALL file_seek64
 (
-    c42_io8_t * io,
+    uintptr_t context,
     int64_t offset,
     int anchor,
     uint64_t * pos
 )
 {
-    file_t * f = (file_t *) io;
+    int fd = context;
     off64_t off;
-    off = lseek64(f->fd, (off64_t) offset, anchor);
+    off = lseek64(fd, (off64_t) offset, anchor);
     if (off == (off64_t) -1)
     {
         switch (errno)
@@ -134,6 +136,28 @@ uint_fast8_t C42_CALL file_seek64
     return 0;
 }
 
+/* file_close ***************************************************************/
+static uint_fast8_t C42_CALL file_close
+(
+    uintptr_t context,
+    int mode
+)
+{
+    int fd = context;
+    if (mode != (C42_IO8_OP_READ | C42_IO8_OP_WRITE)) return C42_IO8_NA;
+    if (close(fd))
+    {
+        switch (errno)
+        {
+        case EBADF: return C42_IO8_BAD_FILE;
+        case EINTR: return C42_IO8_INTERRUPTED;
+        case EIO: return C42_IO8_IO_ERROR;
+        default: return C42_IO8_OTHER_ERROR;
+        }
+    }
+    return 0;
+}
+
 /* file_class ***************************************************************/
 c42_io8_class_t file_class =
 {
@@ -142,30 +166,20 @@ c42_io8_class_t file_class =
     file_seek,
     file_seek64,
     NULL,
-    NULL
+    file_close
 };
 
 /* file_init ****************************************************************/
-void file_init (file_t * f, int fd)
+void file_init (c42_io8_t * f, int fd)
 {
-    f->io8.io8_class = &file_class;
-    f->fd = fd;
-}
-
-/* file_alloc ***************************************************************/
-c42_io8_t * file_alloc (int fd)
-{
-    file_t * f;
-    f = malloc(sizeof(file_t));
-    if (!f) return NULL;
-    file_init(f, fd);
-    return &f->io8;
+    f->io8_class = &file_class;
+    f->context = fd;
 }
 
 /* file_open ****************************************************************/
 uint_fast8_t C42_CALL file_open
 (
-    c42_io8_t * * io_p,
+    c42_io8_t * io,
     uint8_t const * path,
     int mode,
     void * context
@@ -175,53 +189,48 @@ uint_fast8_t C42_CALL file_open
     (void) context;
     switch (mode & 7)
     {
-    case C42_FSI_OPEN_EXISTING:
+    case C42_FSA_OPEN_EXISTING:
         oflags = 0;
         break;
-    case C42_FSI_OPEN_ALWAYS:
+    case C42_FSA_OPEN_ALWAYS:
         oflags = O_CREAT;
         break;
-    case C42_FSI_CREATE_NEW:
+    case C42_FSA_CREATE_NEW:
         oflags = O_CREAT | O_EXCL;
         break;
-    case C42_FSI_CREATE_ALWAYS:
+    case C42_FSA_CREATE_ALWAYS:
         oflags = O_CREAT | O_TRUNC;
         break;
-    case C42_FSI_TRUNC_EXISTING:
+    case C42_FSA_TRUNC_EXISTING:
         oflags = O_TRUNC;
         break;
     default:
-        return C42_FSI_BAD_MODE;
+        return C42_FSA_BAD_MODE;
     }
-    switch (mode & (C42_FSI_READ | C42_FSI_WRITE))
+    switch (mode & (C42_FSA_READ | C42_FSA_WRITE))
     {
     case 0:
-    case C42_FSI_READ: 
+    case C42_FSA_READ: 
         oflags |= O_RDONLY;
         break;
-    case C42_FSI_WRITE:
+    case C42_FSA_WRITE:
         oflags |= O_WRONLY;
         break;
-    case C42_FSI_READ | C42_FSI_WRITE:
+    case C42_FSA_READ | C42_FSA_WRITE:
         oflags |= O_RDWR;
         break;
     }
-    omode = mode >> C42_FSI_PERM_SHIFT;
+    omode = mode >> C42_FSA_PERM_SHIFT;
 
     fd = open((char const *) path, oflags, omode);
-    if (fd < 0) return C42_FSI_SOME_ERROR;
+    if (fd < 0) return C42_FSA_SOME_ERROR;
 
-    *io_p = file_alloc(fd);
-    if (!*io_p) 
-    {
-        while (close(fd) < 0 && errno == EINTR); 
-        return C42_FSI_NO_MEM; 
-    }
+    file_init(io, fd);
     return 0;
 }
 
 /* fsi **********************************************************************/
-static c42_fsi_t posix_fsi =
+static c42_fsa_t posix_fsa =
 {
     file_open,
     NULL, // file_open context
@@ -264,41 +273,79 @@ static c42_ma_t libc_ma =
     NULL
 };
 
-/* c42svc_ma ****************************************************************/
-C42SVC_API uint_fast8_t C42_CALL c42svc_ma (c42_ma_t * ma, char const * name)
-{
-    if (!name || !strcmp(name, "libc"))
-    {
-        *ma = libc_ma;
-        return 0;
-    }
-
-    return C42SVC_MISSING;
-}
-
-
-/* c42svc_fsi ***************************************************************/
-C42SVC_API uint_fast8_t C42_CALL c42svc_fsi (c42_fsi_t * fsi, char const * name)
-{
-    if (!name || !strcmp(name, "posix"))
-    {
-        *fsi = posix_fsi;
-        return 0;
-    }
-
-    return C42SVC_MISSING;
-}
-
-
-/* c42svc_smt ***************************************************************/
+/* c42svc_init **************************************************************/
 /**
- *  Inits simple multithreading interface.
+ *  Services
  */
-C42SVC_API uint_fast8_t C42_CALL c42svc_smt (c42_smt_t * smt, char const * name)
+C42SVC_API uint_fast8_t C42_CALL c42svc_init
+(
+    c42_svc_t * svc
+)
 {
-    (void) smt;
-    (void) name;
-    return C42SVC_MISSING;
+    svc->provider = (uint8_t const *) "c42svc-posix-v0000-"
+#if C42_ARM32
+        "-arm32"
+#elif C42_ARM64
+        "-arm64"
+#elif C42_MIPS
+        "-mips"
+#elif C42_AMD64
+        "-amd64"
+#elif C42_IA32
+        "-ia32"
+#else
+        "-unknown_arch"
+#endif
+
+#if C42_BSLE
+        "-bsle"
+#elif C42_BSBE
+        "-bsbe"
+#elif C42_WSLE
+        "-wsle"
+#elif C42_WSBE
+        "-wsbe"
+#endif
+
+#if C42_STATIC
+        "-static"
+#else
+        "-dynamic"
+#endif
+
+#if _DEBUG
+        "-debug"
+#else
+        "-release"
+#endif
+        ;
+    svc->ma = &libc_ma;
+    svc->smt = NULL;
+    svc->fsa = &posix_fsa;
+    return 0;
+}
+
+
+/* c42svc_std_init **********************************************************/
+/**
+ *  Inits standard streams.
+ */
+C42SVC_API uint_fast8_t C42_CALL c42svc_std_init
+(
+    c42_io8_std_t * stdio
+)
+{
+    (void) stdio;
+    return C42SVC_UNSUP;
+}
+
+C42SVC_API uint_fast8_t C42_CALL c42svc_std_finish
+(
+    c42_io8_std_t * stdio
+)
+{
+    (void) stdio;
+    return C42SVC_UNSUP;
 }
 
 #endif

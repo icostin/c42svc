@@ -16,26 +16,32 @@
 #define C42SVC_MISSING 2 /**< requested item is missing */
 #define C42SVC_UNSUP 3 /**< unsupported feature */
 
-/* c42svc_ma ****************************************************************/
+/* c42svc_init **************************************************************/
 /**
- *  Inits a memory allocator.
- *  @param ma   [out]   allocator struct
- *  @param name [in]    the allocator name
+ *  Services
  */
-C42SVC_API uint_fast8_t C42_CALL c42svc_ma (c42_ma_t * ma, char const * name);
+C42SVC_API uint_fast8_t C42_CALL c42svc_init
+(
+    c42_svc_t * svc
+);
 
-/* c42svc_fsi ***************************************************************/
+/* c42svc_std_init **********************************************************/
 /**
- *  Inits file system interface.
+ *  Inits standard streams.
  */
-C42SVC_API uint_fast8_t C42_CALL c42svc_fsi (c42_fsi_t * fsi, char const * name);
+C42SVC_API uint_fast8_t C42_CALL c42svc_std_init
+(
+    c42_io8_std_t * stdio
+);
 
-/* c42svc_smt ***************************************************************/
+/* c42svc_std_finish ********************************************************/
 /**
- *  Inits simple multithreading interface.
+ *  Finishes standard streams.
  */
-C42SVC_API uint_fast8_t C42_CALL c42svc_smt (c42_smt_t * smt, char const * name);
-
+C42SVC_API uint_fast8_t C42_CALL c42svc_std_finish
+(
+    c42_io8_std_t * stdio
+);
 
 #endif
 
