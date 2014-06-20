@@ -21,7 +21,7 @@ EXEEXT:=$(if $(findstring mingw,$(CC)),.exe,)
 LN:=$(LIBPFX)$N$(LIBEXT)
 DLIB:=$B/$(LN)
 SLIB:=$B/lib$(N).a
-CF:=-std=c99 -Wall -Werror -Wextra -fvisibility=hidden -I$O/include
+CF:=-std=gnu99 -Wall -Werror -Wextra -fvisibility=hidden -I$O/include
 LIBCF:=$(CF)
 DLIBCF:=$(LIBCF) -fpic -D$D_LIB_BUILD
 SLIBCF:=$(LIBCF) -D$D_STATIC
@@ -33,7 +33,7 @@ endif
 CF_debug:=-O0 -D_DEBUG
 CF_release:=-O3 -ffast-math -fomit-frame-pointer -DNDEBUG
 
-LIBF:=
+LIBF:=-L$O/lib -l:$(LIBPFX)c42$(LIBEXT)
 
 OK_MSG=[32mOK[0m
 FAILED_MSG=[31;1mFAILED[22m

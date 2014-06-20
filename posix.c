@@ -5,9 +5,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <unistd.h>
 #include "c42svc.h"
 
 /* file_read ****************************************************************/
@@ -136,6 +136,32 @@ static uint_fast8_t C42_CALL file_seek64
     return 0;
 }
 
+/* file_trunc ***************************************************************/
+static uint_fast8_t C42_CALL file_trunc
+(
+    uintptr_t ctx
+)
+{
+    int fd = ctx;
+    off_t off;
+    off = lseek(fd, 0, SEEK_CUR);
+    if (off == (off_t) -1)
+    {
+        switch (errno)
+        {
+        case EBADF: return C42_IO8_BAD_FILE;
+        case EINVAL: return C42_IO8_BAD_POS;
+        case EOVERFLOW: return C42_IO8_POS_OVERFLOW;
+        case EPIPE: return C42_IO8_NO_SEEK;
+        default: return C42_IO8_OTHER_ERROR;
+        }
+    }
+    if (ftruncate(fd, off))
+    {
+        return C42_IO8_OTHER_ERROR;
+    }
+    return 0;
+}
 /* file_close ***************************************************************/
 static uint_fast8_t C42_CALL file_close
 (
@@ -165,7 +191,7 @@ c42_io8_class_t file_class =
     file_write,
     file_seek,
     file_seek64,
-    NULL,
+    file_trunc,
     file_close
 };
 
@@ -210,7 +236,7 @@ uint_fast8_t C42_CALL file_open
     switch (mode & (C42_FSA_READ | C42_FSA_WRITE))
     {
     case 0:
-    case C42_FSA_READ: 
+    case C42_FSA_READ:
         oflags |= O_RDONLY;
         break;
     case C42_FSA_WRITE:
@@ -274,9 +300,6 @@ static c42_ma_t libc_ma =
 };
 
 /* c42svc_init **************************************************************/
-/**
- *  Services
- */
 C42SVC_API uint_fast8_t C42_CALL c42svc_init
 (
     c42_svc_t * svc
@@ -319,33 +342,33 @@ C42SVC_API uint_fast8_t C42_CALL c42svc_init
         "-release"
 #endif
         ;
-    svc->ma = &libc_ma;
-    svc->smt = NULL;
-    svc->fsa = &posix_fsa;
+    svc->ma = libc_ma;
+    C42_VAR_CLEAR(svc->smt);
+    svc->fsa = posix_fsa;
     return 0;
 }
 
 
 /* c42svc_std_init **********************************************************/
-/**
- *  Inits standard streams.
- */
 C42SVC_API uint_fast8_t C42_CALL c42svc_std_init
 (
     c42_io8_std_t * stdio
 )
 {
-    (void) stdio;
-    return C42SVC_UNSUP;
+    file_init(&stdio->in, 0);
+    file_init(&stdio->out, 1);
+    file_init(&stdio->err, 2);
+    return 0;
 }
 
+/* c42svc_std_finish ********************************************************/
 C42SVC_API uint_fast8_t C42_CALL c42svc_std_finish
 (
     c42_io8_std_t * stdio
 )
 {
     (void) stdio;
-    return C42SVC_UNSUP;
+    return 0;
 }
 
 #endif

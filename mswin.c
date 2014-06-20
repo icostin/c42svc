@@ -11,28 +11,20 @@
 #error AFAIK Windows only works on little endian boxes
 #endif
 
-/* file_t *******************************************************************/
-typedef struct file_s file_t;
-struct file_s
-{
-    c42_io8_t io8;
-    HANDLE h;
-};
-
 /* file_read ****************************************************************/
 uint_fast8_t C42_CALL file_read
 (
-    c42_io8_t * io, 
+    uintptr_t context,
     uint8_t * data, 
     size_t size, 
     size_t * rsize
 )
 {
-    file_t * f = (file_t *) io;
+    HANDLE h = (HANDLE) context;
     DWORD r;
     BOOL b;
 
-    b = ReadFile(f->h, data, size, &r, NULL);
+    b = ReadFile(h, data, size, &r, NULL);
     *rsize = r;
     if (b) return 0;
     /* TODO: provide specific error codes */
@@ -42,13 +34,13 @@ uint_fast8_t C42_CALL file_read
 /* file_write ***************************************************************/
 uint_fast8_t C42_CALL file_write
 (
-    c42_io8_t * io,
+    uintptr_t context,
     uint8_t const * data,
     size_t size,
     size_t * wsize
 )
 {
-    file_t * f = (file_t *) io;
+    HANDLE h = (HANDLE) context;
     BOOL b;
     DWORD s;
 
@@ -56,7 +48,7 @@ uint_fast8_t C42_CALL file_write
 #if SIZE_MAX > UINT32_MAX
     if ((size_t) s != size) return C42_IO8_TOO_BIG;
 #endif
-    b = WriteFile(f->h, data, s, &s, NULL);
+    b = WriteFile(h, data, s, &s, NULL);
     *wsize = s;
     if (b) return 0;
     /* TODO: provide specific error codes */
@@ -66,18 +58,18 @@ uint_fast8_t C42_CALL file_write
 /* file_seek ****************************************************************/
 uint_fast8_t C42_CALL file_seek
 (
-    c42_io8_t * io,
+    uintptr_t context,
     ptrdiff_t offset,
     int anchor,
     size_t * pos
 )
 {
-    file_t * f = (file_t *) io;
+    HANDLE h = (HANDLE) context;
     LONG hi;
     DWORD e, dw;
 
     hi = (offset >> 31) >> 1;
-    dw = SetFilePointer(f->h, (LONG) offset, &hi, anchor);
+    dw = SetFilePointer(h, (LONG) offset, &hi, anchor);
     if (dw == INVALID_SET_FILE_POINTER && (e = GetLastError() != NO_ERROR))
     {
         switch (e)
@@ -96,18 +88,18 @@ uint_fast8_t C42_CALL file_seek
 /* file_seek64 **************************************************************/
 uint_fast8_t C42_CALL file_seek64
 (
-    c42_io8_t * io,
+    uintptr_t context,
     int64_t offset,
     int anchor,
     uint64_t * pos
 )
 {
-    file_t * f = (file_t *) io;
+    HANDLE h = (HANDLE) context;
     LONG hi;
     DWORD e, dw;
 
     hi = (offset >> 31) >> 1;
-    dw = SetFilePointer(f->h, (LONG) offset, &hi, anchor);
+    dw = SetFilePointer(h, (LONG) offset, &hi, anchor);
     if (dw == INVALID_SET_FILE_POINTER && (e = GetLastError() != NO_ERROR))
     {
         switch (e)
@@ -132,10 +124,10 @@ c42_io8_class_t file_class =
 };
 
 /* file_init ****************************************************************/
-void file_init (file_t * f, HANDLE h)
+void file_init (c42_io8_t * f, HANDLE h)
 {
-    f->io8.io8_class = &file_class;
-    f->h = h;
+    f->io8_class = &file_class;
+    f->context = (uintptr_t) h;
 }
 
 /* ma_handler ***************************************************************/
@@ -169,42 +161,77 @@ uint_fast8_t C42_CALL ma_handler
     return 0;
 }
 
-/* c42svc_ma ****************************************************************/
-C42SVC_API uint_fast8_t C42_CALL c42svc_ma (c42_ma_t * ma, char const * name)
+/* c42svc_init **************************************************************/
+C42SVC_API uint_fast8_t C42_CALL c42svc_init
+(
+    c42_svc_t * svc
+)
 {
-    if (!name || !strcmp(name, "win32heap"))
-    {
-        ma->handler = ma_handler;
-        ma->ctx = GetProcessHeap();
-        return 0;
-    }
+    svc->provider = (uint8_t const *) "c42svc-mswin-v0000-"
+#if C42_ARM32
+        "-arm32"
+#elif C42_ARM64
+        "-arm64"
+#elif C42_MIPS
+        "-mips"
+#elif C42_AMD64
+        "-amd64"
+#elif C42_IA32
+        "-ia32"
+#else
+        "-unknown_arch"
+#endif
 
-    return C42SVC_MISSING;
+#if C42_BSLE
+        "-bsle"
+#elif C42_BSBE
+        "-bsbe"
+#elif C42_WSLE
+        "-wsle"
+#elif C42_WSBE
+        "-wsbe"
+#endif
+
+#if C42_STATIC
+        "-static"
+#else
+        "-dynamic"
+#endif
+
+#if _DEBUG
+        "-debug"
+#else
+        "-release"
+#endif
+        ;
+    svc->ma.handler = ma_handler;
+    svc->ma.context = (void *) GetProcessHeap();
+    C42_VAR_CLEAR(svc->smt);
+    C42_VAR_CLEAR(svc->fsa);
+    return 0;
 }
 
 
-/* c42svc_fsi ***************************************************************/
-C42SVC_API uint_fast8_t C42_CALL c42svc_fsi (c42_fsi_t * fsi, char const * name)
+/* c42svc_std_init **********************************************************/
+C42SVC_API uint_fast8_t C42_CALL c42svc_std_init
+(
+    c42_io8_std_t * stdio
+)
 {
-    (void) fsi;
-    if (!name || !strcmp(name, "posix"))
-    {
-        return C42SVC_MISSING;
-    }
-
-    return C42SVC_MISSING;
+    file_init(&stdio->in, GetStdHandle(STD_INPUT_HANDLE));
+    file_init(&stdio->out, GetStdHandle(STD_OUTPUT_HANDLE));
+    file_init(&stdio->err, GetStdHandle(STD_ERROR_HANDLE));
+    return 0;
 }
 
-
-/* c42svc_smt ***************************************************************/
-/**
- *  Inits simple multithreading interface.
- */
-C42SVC_API uint_fast8_t C42_CALL c42svc_smt (c42_smt_t * smt, char const * name)
+/* c42svc_std_finish ********************************************************/
+C42SVC_API uint_fast8_t C42_CALL c42svc_std_finish
+(
+    c42_io8_std_t * stdio
+)
 {
-    (void) smt;
-    (void) name;
-    return C42SVC_MISSING;
+    (void) stdio;
+    return 0;
 }
 
 #endif
