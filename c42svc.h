@@ -3,9 +3,9 @@
 
 #include <c42.h>
 
-#if C42_STATIC
+#if C42SVC_STATIC
 #define C42SVC_API
-#elif C42_LIB_BUILD
+#elif C42SVC_LIB_BUILD
 #define C42SVC_API C42_LIB_EXPORT
 #else
 #define C42SVC_API C42_LIB_IMPORT
